@@ -37,7 +37,7 @@ function setCd(hours = 1) {
 
 
 // Init
-const agentBrowser = await chromium.launch({headless: false}) // Set to false if you think something goes wrong or not according to how it supposed to be
+const agentBrowser = await chromium.launch({headless: true}) // Set to false if you think something goes wrong or not according to how it supposed to be
 const context = await agentBrowser.newContext(devices['iPhone 12']) // Dont change this or it'll break the auth; where you need to scroll then click the auth button
 const page = await context.newPage()
 await page.goto('https://discord.com/login')
