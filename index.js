@@ -2,18 +2,39 @@ import dotenv from 'dotenv'
 
 dotenv.config()
 import {chromium, devices} from 'playwright'
+import fs from 'fs'
 
 let token = process.env.DISCORD_TOKEN
 let isLoggedIn = false
 let nextClaim = 0
+const cooldownFile = './cooldown.json'
+
+function loadCd() {
+    if (fs.existsSync(cooldownFile)) {
+        const data = JSON.parse(fs.readFileSync(cooldownFile, 'utf-8'))
+        nextClaim = data.nextClaim || 0
+    }
+}
+
+function saveCd() {
+    fs.writeFileSync(cooldownFile, JSON.stringify({nextClaim}), 'utf-8')
+}
 
 function isOnCd() {
-    return Date.now() < nextClaim
+    const diff = nextClaim - Date.now()
+    if (diff > 0) {
+        console.log(`⏳ On cooldown: ${Math.ceil(diff / 1000)}s left.`)
+        return true
+    }
+    return false
 }
 
 function setCd(hours = 1) {
     nextClaim = Date.now() + hours * 60 * 60 * 1000
+    saveCd()
+    console.log(`✅ Cooldown set for ${hours}h`)
 }
+
 
 // Init
 const agentBrowser = await chromium.launch({headless: false}) // Set to false if you think something goes wrong or not according to how it supposed to be
@@ -77,23 +98,33 @@ async function getAuth() {
 }
 
 if (isLoggedIn) {
-    let statusClaim = false
-    await page.goto('https://soccerguru.live/dashboard')
-
-    if (!statusClaim) {
+    if (isOnCd()) {
+        console.log('Cooldown!!!')
+    } else {
+        await page.goto('https://soccerguru.live/dashboard')
+        // TODO : Fix claim button detector
         try {
             const timestamp = Date.now()
-            const claimSection = page.getByText('Build your club with a new player every hour!')
-            const claimBtn = claimSection.getByRole('button', {name: /Claim/i}).click()
-            await page.screenshot({path: `/output/screenshot-${timestamp}.png`, fullPage: true})
-            await page.getByRole('button', {name: /Continue/i}).click()
-            await page.goto('https://soccerguru.live/dashboard')
-        } finally {
-            setCd(1)
+            const claimSection = page.getByText('Build your club with a new player every hour!').locator('..')
+            const claimBtn = claimSection.locator('a:not(.btn-disabled):has-text("Claim")')
+            if (await claimBtn.count() > 0) {
+                await claimBtn.click()
+                await page.getByRole('button', {name: /Continue/i}).click()
+                console.log('Card claimed')
+                await page.screenshot({path: `/output/screenshot-${timestamp}.png`, fullPage: true})
+                await page.getByRole('button', {name: /Continue/i}).click()
+                await page.goto('https://soccerguru.live/dashboard')
+                setCd(1)
+            } else {
+                console.log('No button claim found')
+            }
+        } catch (e) {
+            console.error('Error', e)
         }
-    } else {
-        console.log('Still on cooldown, skipping claim.')
     }
+    console.log('next claim available in', new Date(nextClaim).toLocaleString())
 } else {
     await getAuth()
 }
+
+loadCd()
