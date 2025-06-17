@@ -4,7 +4,7 @@
   "description": "Automatically claim card from Soccer Guru Bot via Website",
   "main": "index.js",
   "scripts": {
-    "run": "node index.js"
+    "start": "node index.js"
   },
   "private": true,
   "devDependencies": {
