@@ -1,12 +1,17 @@
 {
-  "name": "untitled1",
+  "name": "soccer-guru-autoclaim",
   "version": "1.0.0",
-  "description": "",
+  "description": "Automatically claim card from Soccer Guru Bot via Website",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "run": "node index.js"
+  },
   "private": true,
   "devDependencies": {
-    "@playwright/test": "^1.53.0",
     "@types/node": "^24.0.3"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "playwright": "^1.53.0"
   }
 }
