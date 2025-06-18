@@ -1,6 +1,7 @@
 {
   "name": "soccer-guru-autoclaim",
-  "version": "1.0.0",
+  "version": "2.0.1",
+    "type": "module",
   "description": "Automatically claim card from Soccer Guru Bot via Website",
   "main": "index.js",
   "scripts": {
