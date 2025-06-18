@@ -30,6 +30,8 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run claimer script
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: npm run start
 
       - name: Upload output (screenshots/logs)
