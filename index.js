@@ -59,9 +59,7 @@ async function checkLoginStatus() {
 		return false;
 	} catch {
 		try {
-			await page.waitForURL("https://discord.com/channels/@me", {
-				timeout: 10000,
-			});
+			await page.waitForURL("https://discord.com/channels/@me", {});
 			return true;
 		} catch {
 			return false;
