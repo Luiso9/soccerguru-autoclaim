@@ -39,7 +39,7 @@ function setCd(hours = 1) {
 
 async function initBrowser() {
 	if (!browser) {
-		browser = await chromium.launch({ headless: false }); // set to false to debug
+		browser = await chromium.launch({ headless: true }); // set to false to debug
 		context = await browser.newContext(devices["iPhone 12"]); // do not change this ive match the code based on Iphone 12's viewport
 		page = await context.newPage();
 	}
