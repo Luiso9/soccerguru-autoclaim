@@ -39,8 +39,8 @@ function setCd(hours = 1) {
 
 async function initBrowser() {
 	if (!browser) {
-		browser = await chromium.launch({ headless: true }); // set to false to debug
-		context = await browser.newContext(devices["iPhone 12"]); // do not change this ive match the code based on Iphone 12's viewport
+		browser = await chromium.launch({ headless: false }); // set to false to debug
+		context = await browser.newContext(devices["firefox"]); // do not change this ive match the code based on firefox viewport
 		page = await context.newPage();
 	}
 	return page;
@@ -90,9 +90,7 @@ async function performLogin() {
 	// Reload the page to make sure TOKEN is applied
 	await page.reload();
 	// if url changed to * mean user logged in
-	await page.waitForURL("https://discord.com/channels/@me", {
-		timeout: 10000,
-	});
+	await page.waitForURL("https://discord.com/channels/@me", {});
 
 	await page.goto("https://soccerguru.live/dashboard");
 	await page.waitForLoadState("networkidle");
@@ -117,52 +115,58 @@ async function performLogin() {
 }
 
 async function attemptClaim() {
-	await page.waitForTimeout(5000);
 	await page.goto("https://soccerguru.live/dashboard");
+	await page.waitForLoadState("networkidle");
 
-	try {
-		await page.mouse.wheel(0, 50);
-		await page.mouse.wheel(0, 50);
-		await page.mouse.wheel(0, 50);
-		const timestamp = Date.now();
-		const claimWrapper = page.locator(
-			'div.bg-blue-600:has-text("Build your club")'
+	let normalClaim = null;
+	let dailyClaim = null;
+
+	const anchors = await page.$$("a");
+
+	for (const anchor of anchors) {
+		const text = await anchor.evaluate((el) => el.textContent.trim());
+		if (text !== "Claim") continue;
+
+		const parent = await anchor.evaluateHandle((el) => el.closest("div"));
+		const isDaily = await parent.evaluate((el) =>
+			el.innerHTML.includes("Daily")
 		);
-		const claimBtn = claimWrapper.locator("a");
 
-		if ((await claimBtn.count()) > 0) {
-			const classList = await claimBtn.first().getAttribute("class");
-			const isDisabled = classList?.includes("btn-disabled");
+		if (isDaily) {
+			dailyClaim = anchor;
+		} else {
+			normalClaim = anchor;
+		}
+	}
 
-			const innerText = await claimBtn.first().innerText();
-			console.log(`Button text: ${innerText}`);
+	const timestamp = Date.now();
 
-			if (isDisabled || innerText.trim() === "/in a/") {
-				console.log("Claim button is disabled. Sleeping for 30 minutes.");
-				setCd(0.5);
-				await sleep(30 * 60 * 1000);
-				return false;
-			}
+	if (normalClaim) {
+		const isDisabled = await normalClaim.evaluate((el) =>
+			el.classList.contains("btn-disabled")
+		);
 
-			await claimBtn.first().click();
-			await page.getByRole("button", { name: /Continue/i }).click();
-			console.log("Card claimed");
+		if (!isDisabled) {
+			await normalClaim.scrollIntoViewIfNeeded();
+			await normalClaim.click();
+
+			await page.getByRole("button", { name: "Continue" }).click();
+
 			await page.screenshot({
-				path: `/output/screenshot-${Date.now()}.png`,
+				path: `output/screenshot-${timestamp}.png`,
 				fullPage: true,
 			});
+
 			await page.getByRole("button", { name: /Continue/i }).click();
 			await page.goto("https://soccerguru.live/dashboard");
+
 			setCd(1);
 			return true;
 		} else {
-			console.log("No claim button found");
-			return false;
+			setCd(0.5);
 		}
-	} catch (e) {
-		console.error("Error during claim:", e);
-		return false;
 	}
+	return false;
 }
 
 function sleep(ms) {
