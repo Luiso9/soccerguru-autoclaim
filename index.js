@@ -1,130 +1,213 @@
-import dotenv from 'dotenv'
+import dotenv from "dotenv";
 
-dotenv.config()
-import {chromium, devices} from 'playwright'
-import fs from 'fs'
+dotenv.config();
+import { chromium, devices } from "playwright";
+import fs from "fs";
 
-let token = process.env.DISCORD_TOKEN
-let isLoggedIn = false
-let nextClaim = 0
-const cooldownFile = './cooldown.json'
+let token = process.env.DISCORD_TOKEN;
+let browser = null;
+let context = null;
+let page = null;
+let nextClaim = 0;
+const cooldownFile = "./cooldown.json";
 
 function loadCd() {
-    if (fs.existsSync(cooldownFile)) {
-        const data = JSON.parse(fs.readFileSync(cooldownFile, 'utf-8'))
-        nextClaim = data.nextClaim || 0
-    }
+	if (fs.existsSync(cooldownFile)) {
+		const data = JSON.parse(fs.readFileSync(cooldownFile, "utf-8"));
+		nextClaim = data.nextClaim || 0;
+	}
 }
 
 function saveCd() {
-    fs.writeFileSync(cooldownFile, JSON.stringify({nextClaim}), 'utf-8')
+	fs.writeFileSync(cooldownFile, JSON.stringify({ nextClaim }), "utf-8");
 }
 
 function isOnCd() {
-    const diff = nextClaim - Date.now()
-    if (diff > 0) {
-        console.log(`⏳ On cooldown: ${Math.ceil(diff / 1000)}s left.`)
-        return true
-    }
-    return false
+	const diff = nextClaim - Date.now();
+	if (diff > 0) {
+		console.log(`cooldown ${Math.ceil(diff / 1000)}s left.`);
+		return true;
+	}
+	return false;
 }
 
 function setCd(hours = 1) {
-    nextClaim = Date.now() + hours * 60 * 60 * 1000
-    saveCd()
-    console.log(`✅ Cooldown set for ${hours}h`)
+	nextClaim = Date.now() + hours * 60 * 60 * 1000;
+	saveCd();
+	console.log(`Cooldown set ${hours}h`);
 }
 
-
-// Init
-const agentBrowser = await chromium.launch({headless: true}) // Set to false if you think something goes wrong or not according to how it supposed to be
-const context = await agentBrowser.newContext(devices['iPhone 12']) // Dont change this or it'll break the auth; where you need to scroll then click the auth button
-const page = await context.newPage()
-await page.goto('https://discord.com/login')
-
-// Check user logged in or not
-try {
-    await page.getByRole('button', {name: /Log In/}).waitFor({
-        state: 'visible',
-    });
-    isLoggedIn = false
-    console.log('Not logged in, processed to logged in')
-} catch {
-    await page.waitForURL('https://discord.com/channels/@me', {timeout: 10000})
-    isLoggedIn = true
-    console.log('User already logged in, processed to claim card.')
+async function initBrowser() {
+	if (!browser) {
+		browser = await chromium.launch({ headless: false }); // set to false to debug
+		context = await browser.newContext(devices["iPhone 12"]); // do not change this ive match the code based on Iphone 12's viewport
+		page = await context.newPage();
+	}
+	return page;
 }
 
-// Login
-async function getAuth() {
-    if (page?.getByRole('button', {name: /Log In/i})) {
-        console.log('not logged in')
-        await page.waitForLoadState('networkidle');
-        try {
-            // Login (insert token)
-            await page.evaluate((token) => {
-                function login(token) {
-                    const interval = setInterval(() => {
-                        document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage.token = `"${token}"`;
-                    }, 50);
+async function checkLoginStatus() {
+	await page.goto("https://discord.com/login");
+	await page.waitForLoadState("networkidle");
 
-                    setTimeout(() => {
-                        clearInterval(interval);
-                        location.reload();
-                    }, 2500);
-                }
+	try {
+		await page.getByRole("button", { name: /Log In/ }).waitFor({
+			state: "visible",
+			timeout: 5000,
+		});
 
-                login(token);
-            }, token);
-
-            // Reload the page so TOKEN is applied to the session
-            await page.reload();
-            await page.waitForURL('https://discord.com/channels/@me', {timeout: 10000});
-        } finally {
-            await page.goto('https://soccerguru.live/dashboard')
-            // Authorize Soccer Guru
-            // const scrollBtn = page.getByRole('button', { name: /Keep Scrolling.../i })
-            // await scrollBtn.waitFor({ state: 'visible', timeout: 5000 })
-
-            await page.getByRole('link', {name: 'privacy policy'}).hover()
-            await page.mouse.wheel(0, 50)
-
-            const authorizeBtn = page.getByRole('button', {name: /Authorize/i})
-            await authorizeBtn.click()
-            console.log('User finally Logged In. Processed to Claim Card.')
-            isLoggedIn = true
-        }
-    }
+		return false;
+	} catch {
+		try {
+			await page.waitForURL("https://discord.com/channels/@me", {
+				timeout: 10000,
+			});
+			return true;
+		} catch {
+			return false;
+		}
+	}
 }
 
-if (isLoggedIn) {
-    if (isOnCd()) {
-        console.log('Cooldown!!!')
-    } else {
-        await page.goto('https://soccerguru.live/dashboard')
-        // TODO : Fix claim button detector
-        try {
-            const timestamp = Date.now()
-            const claimSection = page.getByText('Build your club with a new player every hour!').locator('..')
-            const claimBtn = claimSection.locator('a:not(.btn-disabled):has-text("Claim")')
-            if (await claimBtn.count() > 0) {
-                await claimBtn.click()
-                await page.getByRole('button', {name: /Continue/i}).click()
-                console.log('Card claimed')
-                await page.screenshot({path: `/output/screenshot-${timestamp}.png`, fullPage: true})
-                await page.getByRole('button', {name: /Continue/i}).click()
-                await page.goto('https://soccerguru.live/dashboard')
-                setCd(1)
-            } else {
-                console.log('No button claim found')
-            }
-        } catch (e) {
-            console.error('Error', e)
-        }
-    }
-    console.log('next claim available in', new Date(nextClaim).toLocaleString())
-} else {
-    await getAuth()
+async function performLogin() {
+	console.log("Not logged in, going to logged in");
+
+	// Login (insert token)
+	await page.evaluate((token) => {
+		function login(token) {
+			const interval = setInterval(() => {
+				document.body.appendChild(
+					document.createElement("iframe")
+				).contentWindow.localStorage.token = `"${token}"`;
+			}, 50);
+
+			setTimeout(() => {
+				clearInterval(interval);
+				location.reload();
+			}, 2500);
+		}
+		login(token);
+	}, token);
+
+	// Reload the page to make sure TOKEN is applied
+	await page.reload();
+	// if url changed to * mean user logged in
+	await page.waitForURL("https://discord.com/channels/@me", {
+		timeout: 10000,
+	});
+
+	await page.goto("https://soccerguru.live/dashboard");
+	await page.waitForLoadState("networkidle");
+	await page.getByRole("button", { name: /Keep scrolling/ }).isVisible({
+		timeout: 5000,
+	});
+	// Authorize Soccer Guru
+	await page
+		.getByRole("link", { name: /privacy policy/i })
+		.scrollIntoViewIfNeeded();
+	await page
+		.getByRole("link", { name: /terms of service/ })
+		.scrollIntoViewIfNeeded();
+	await page.mouse.wheel(0, 50);
+	await page.mouse.wheel(0, 50);
+	await page.mouse.wheel(0, 50);
+
+	const authorizeBtn = page.getByRole("button", { name: /Authorize/i });
+	await page.waitForTimeout(2000); // to make sure its actually visible, sometimes itll just process to click while the button it self still hasnt been atached
+	await authorizeBtn.click();
+	console.log("User finally Logged In. Processed to Claim Card.");
 }
 
-loadCd()
+async function attemptClaim() {
+	await page.waitForTimeout(5000);
+	await page.goto("https://soccerguru.live/dashboard");
+
+	try {
+		await page.mouse.wheel(0, 50);
+		await page.mouse.wheel(0, 50);
+		await page.mouse.wheel(0, 50);
+		const timestamp = Date.now();
+		const claimWrapper = page.locator(
+			'div.bg-blue-600:has-text("Build your club")'
+		);
+		const claimBtn = claimWrapper.locator("a");
+
+		if ((await claimBtn.count()) > 0) {
+			const classList = await claimBtn.first().getAttribute("class");
+			const isDisabled = classList?.includes("btn-disabled");
+
+			const innerText = await claimBtn.first().innerText();
+			console.log(`Button text: ${innerText}`);
+
+			if (isDisabled || innerText.trim() === "/in a/") {
+				console.log("Claim button is disabled. Sleeping for 30 minutes.");
+				setCd(0.5);
+				await sleep(30 * 60 * 1000);
+				return false;
+			}
+
+			await claimBtn.first().click();
+			await page.getByRole("button", { name: /Continue/i }).click();
+			console.log("Card claimed");
+			await page.screenshot({
+				path: `/output/screenshot-${Date.now()}.png`,
+				fullPage: true,
+			});
+			await page.getByRole("button", { name: /Continue/i }).click();
+			await page.goto("https://soccerguru.live/dashboard");
+			setCd(1);
+			return true;
+		} else {
+			console.log("No claim button found");
+			return false;
+		}
+	} catch (e) {
+		console.error("Error during claim:", e);
+		return false;
+	}
+}
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function main() {
+	loadCd();
+
+	console.log("Starting Soccer Guru Auto Claimer...");
+
+	await initBrowser();
+
+	while (true) {
+		try {
+			const isLoggedIn = await checkLoginStatus();
+
+			if (!isLoggedIn) {
+				await performLogin();
+			} else {
+				console.log("User already logged in, processed to claim card.");
+			}
+
+			if (isOnCd()) {
+				const sleepTime = Math.max(nextClaim - Date.now(), 60000);
+				console.log(`Sleeping for ${Math.ceil(sleepTime / 1000)}`);
+				await sleep(sleepTime);
+			} else {
+				await sleep(5000);
+				await attemptClaim();
+				await sleep(30000);
+			}
+
+			console.log(
+				"next claim available in",
+				new Date(nextClaim).toLocaleString()
+			);
+		} catch (error) {
+			console.error("Error in main loop:", error);
+
+			await sleep(5 * 60 * 1000);
+		}
+	}
+}
+
+main().catch(console.error);
